@@ -297,7 +297,9 @@ function carregarFontesRawData_(ss) {
         return {
           nome,
           link,
-          classificacao: tipo || classificarFonte_(nickRaw, link, nickUnico),
+          classificacao: classificarTextoTipo_(tipo) !== 'Nao identificado'
+            ? classificarTextoTipo_(tipo)
+            : classificarFonte_(nickRaw, link, nickUnico),
         };
       });
   });
@@ -349,7 +351,13 @@ function preencherTiposRawDataAno_(abaRaw, ano) {
     if (!url || String(url).trim() === '') return [''];
 
     const tipoAtual = tiposAtuais[index][0];
-    if (tipoAtual && String(tipoAtual).trim() !== '' && !String(tipoAtual).startsWith('Erro:')) {
+    if (
+      tipoAtual &&
+      String(tipoAtual).trim() !== '' &&
+      String(tipoAtual).trim() !== 'Nao informado' &&
+      String(tipoAtual).trim() !== 'Nao identificado' &&
+      !String(tipoAtual).startsWith('Erro:')
+    ) {
       return [tipoAtual];
     }
 
@@ -365,11 +373,59 @@ function buscarTipoPlanilha_(url) {
     const abaSumario = ssJogador.getSheetByName('Sumario');
     if (!abaSumario) return 'Erro: Sumario nao encontrada';
 
-    const tipo = abaSumario.getRange('E2').getDisplayValue();
-    return tipo || 'Nao informado';
+    const textoTipo = lerTextoTipoSumario_(abaSumario);
+    return classificarTextoTipo_(textoTipo);
   } catch (erro) {
     return `Erro: ${erro.message}`;
   }
+}
+
+function lerTextoTipoSumario_(abaSumario) {
+  const candidatos = ['E2', 'F2', 'D2', 'G2', 'E1', 'F1', 'E3', 'F3'];
+  let primeiroValorEncontrado = '';
+
+  for (let i = 0; i < candidatos.length; i++) {
+    const range = abaSumario.getRange(candidatos[i]);
+    const valor = lerValorRangeComMescla_(range);
+    if (!valor) continue;
+    if (!primeiroValorEncontrado) primeiroValorEncontrado = valor;
+    if (classificarTextoTipo_(valor) !== 'Nao identificado') return valor;
+  }
+
+  const valoresCabecalho = abaSumario.getRange('A1:H5').getDisplayValues();
+  for (let linha = 0; linha < valoresCabecalho.length; linha++) {
+    for (let col = 0; col < valoresCabecalho[linha].length; col++) {
+      const valor = valoresCabecalho[linha][col];
+      if (classificarTextoTipo_(valor) !== 'Nao identificado') return valor;
+    }
+  }
+
+  return primeiroValorEncontrado;
+}
+
+function lerValorRangeComMescla_(range) {
+  const valorDireto = String(range.getDisplayValue() || '').trim();
+  if (valorDireto) return valorDireto;
+
+  const mesclas = range.getMergedRanges();
+  for (let i = 0; i < mesclas.length; i++) {
+    const valorMescla = String(mesclas[i].getCell(1, 1).getDisplayValue() || '').trim();
+    if (valorMescla) return valorMescla;
+  }
+
+  return '';
+}
+
+function classificarTextoTipo_(texto) {
+  const normalizado = String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  if (normalizado.includes('congel')) return 'Congelada';
+  if (normalizado.includes('pool')) return 'Pool';
+  if (normalizado.includes('ativa') || normalizado.includes('ativo')) return 'Ativa';
+  return 'Nao identificado';
 }
 
 function localizarLayoutsRawData_(abaRaw) {
